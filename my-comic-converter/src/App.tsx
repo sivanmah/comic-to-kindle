@@ -9,6 +9,7 @@ interface FileInfo {
 function App() {
   const [conversionID, setConversionID] = useState<string | null>(null);
   const [fileInfos, setFileInfos] = useState<FileInfo[]>([]);
+  const [progress, setProgress] = useState<number | null>(null);
 
   const handleFileChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -59,6 +60,7 @@ function App() {
             /* possible upload progress bar here */
           }
         );
+        setProgress(response.data.progress);
         setConversionID(response.data.conversion_id);
       } catch (error) {
         console.error("Error converting images:", error);
@@ -107,6 +109,14 @@ function App() {
               </li>
             ))}
           </ul>
+        )}
+        {progress !== null && (
+          <div>
+            <p>
+              Progress...: {progress} of{" "}
+              {new Set(fileInfos.map(({ directory }) => directory)).size}
+            </p>
+          </div>
         )}
         {conversionID && (
           <div>
