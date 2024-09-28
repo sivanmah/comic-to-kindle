@@ -1,6 +1,7 @@
 import os
 import io
 import platform
+from zipfile import ZipFile
 import subprocess
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
@@ -15,6 +16,8 @@ CORS(app)
 
 os.makedirs('uploads', exist_ok=True)
 UPLOAD_FOLDER = 'uploads'
+app.config['OUTPUT_FOLDER'] = 'output'
+
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -85,53 +88,90 @@ def convert_epub_to_mobi(epub_file, output_mobi):
 
 @app.route('/convert', methods=['POST'])
 def convert_images():
-    app.logger.info("Received /convert request")
-    # app.logger.debug(f"Request files: {request.files}")
-
-    if 'files' not in request.files:
-        return jsonify({'error': 'No files uploaded'}), 400
-    
-    files = request.files.getlist('files')
-    app.logger.info(f"Number of files received: {len(files)}")
-
-    if not files:
-        return jsonify({'error': 'No files selected'}), 400
+    if not request.files:
+        return jsonify({'error': 'No files found in request'}), 400
     
     conversion_id = str(uuid.uuid4())
     conversion_folder = os.path.join(app.config['UPLOAD_FOLDER'], conversion_id) 
+    output_folder = os.path.join(app.config['OUTPUT_FOLDER'], conversion_id)
     os.makedirs(conversion_folder, exist_ok=True)
+    os.makedirs(output_folder, exist_ok=True)
 
-    saved_files = []
-    book_title = "Sample Title"
-    for file in files:
-        if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            file_path = os.path.join(conversion_folder, filename)
+    saved_files = {}
+    for key, file in request.files.items():
+        directory, filename = os.path.split(key)
+        if file and allowed_file(filename):
+            filename = secure_filename(filename)
+
+            dir_path = os.path.join(conversion_folder, directory)
+            os.makedirs(dir_path, exist_ok=True)
+
+            file_path = os.path.join(dir_path, filename)
             file.save(file_path)
-            saved_files.append(file_path)
 
-            if book_title == "Untitled":
-                book_title = os.path.basename(os.path.dirname(file.filename))
-    if not saved_files:
-        return jsonify({'error': 'No valid images found in folder'}), 400
+            if directory not in saved_files:
+                saved_files[directory] = []
+            saved_files[directory].append(file_path)
 
-    saved_files.sort()
+        if not saved_files:
+            return jsonify({'error': 'No valid images found in upload'}), 400
 
-    epub_path = os.path.join(conversion_folder, 'output.epub')
-    create_epub_from_images(saved_files, epub_path, book_title)
+    results = []
+    for directory, files in saved_files.items():
+        files.sort()
+        book_title = directory if directory else "Untitled"
+        
+        # Create EPUB
+        epub_filename = f"{book_title}.epub"
+        epub_path = os.path.join(output_folder, epub_filename)
+        create_epub_from_images(files, epub_path, book_title)
+        
+        # Convert EPUB to MOBI
+        mobi_filename = f"{book_title}.mobi"
+        mobi_path = os.path.join(output_folder, mobi_filename)
+        try:
+            convert_epub_to_mobi(epub_path, mobi_path)
+        except Exception as e:
+            results.append({
+                'book_title': book_title,
+                'error': str(e)
+            })
+        else:
+            results.append({
+                'book_title': book_title,
+                'epub_path': epub_path,
+                'mobi_path': mobi_path
+            })
 
-    mobi_path = os.path.join(conversion_folder, 'output.mobi')
-    convert_epub_to_mobi(epub_path, mobi_path)
-
-    return jsonify({'conversion_id': conversion_id, 'book_title': book_title}), 200
+    return jsonify({
+        'conversion_id': conversion_id,
+        'results': results
+    }), 200
 
 @app.route('/download/<conversion_id>')
 def download_mobi(conversion_id):
-    mobi_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(conversion_id), 'output.mobi')
-    if not os.path.exists(mobi_path):
-        return jsonify({'error': 'File not found'}), 404
+    output_folder = os.path.join(app.config['OUTPUT_FOLDER'], conversion_id)
+    if not os.path.exists(output_folder):
+        return jsonify({'error': 'Conversion ID not found'}), 404 
+
+    mobi_files = [f for f in os.listdir(output_folder) if f.endswith('.mobi')]
+    if not mobi_files:
+        return jsonify({'error': 'No MOBI files found for this conversion ID'}), 404
+
+    memory_file = io.BytesIO()
+    with ZipFile(memory_file, 'w') as zf:
+        for mobi_file in mobi_files:
+            mobi_path = os.path.join(output_folder, mobi_file)
+            zf.write(mobi_path, mobi_file)   
     
-    return send_file(mobi_path, as_attachment=True)
+    memory_file.seek(0)
+
+    return send_file(
+        memory_file,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name='conversion.zip',
+    )
 
 if __name__ == '__main__':
     app.run(debug=True)

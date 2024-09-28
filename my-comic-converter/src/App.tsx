@@ -1,21 +1,51 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import axios from "axios";
 
+interface FileInfo {
+  file: File;
+  directory: string;
+}
+
 function App() {
-  const [files, setFiles] = useState<FileList | null>(null);
   const [conversionID, setConversionID] = useState<string | null>(null);
-  const [bookTitle, setBookTitle] = useState<string>("");
+  const [fileInfos, setFileInfos] = useState<FileInfo[]>([]);
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setFiles(event.target.files || null);
-  };
+  const handleFileChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const fileList = event.target.files;
+      if (fileList) {
+        const newFileInfos: FileInfo[] = [];
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (files) {
+        for (let i = 0; i < fileList.length; i++) {
+          const file = fileList[i];
+          const path = file.webkitRelativePath;
+          const directory = path.split("/")[0];
+
+          newFileInfos.push({ file, directory });
+        }
+
+        setFileInfos((prevFileInfos) => [...prevFileInfos, ...newFileInfos]);
+      }
+      event.target.value = "";
+    },
+    []
+  );
+
+  const handleSubmit = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+
       const formData = new FormData();
-      for (let i = 0; i < files.length; i++) {
-        formData.append("files", files[i]);
+
+      fileInfos.forEach(({ file, directory }) => {
+        // Use the full relative path as the key to preserve directory structure
+        const key = `${directory}/${file.name}`;
+        formData.append(key, file);
+      });
+
+      // Log the FormData contents
+      for (const [key, value] of formData.entries()) {
+        console.log(key, value);
       }
 
       try {
@@ -30,12 +60,12 @@ function App() {
           }
         );
         setConversionID(response.data.conversion_id);
-        setBookTitle(response.data.book_title);
       } catch (error) {
         console.error("Error converting images:", error);
       }
-    }
-  };
+    },
+    [fileInfos]
+  );
 
   const handleDownload = () => {
     if (conversionID) {
@@ -50,6 +80,12 @@ function App() {
         <form onSubmit={handleSubmit} className=" flex flex-row">
           <input
             type="file"
+            ref={(input) => {
+              if (input) {
+                input.setAttribute("webkitdirectory", "");
+                input.setAttribute("directory", "");
+              }
+            }}
             multiple
             onChange={handleFileChange}
             className="block"
@@ -61,9 +97,19 @@ function App() {
             Convert
           </button>
         </form>
+        {fileInfos.length > 0 && (
+          <ul>
+            {Array.from(
+              new Set(fileInfos.map(({ directory }) => directory))
+            ).map((directory) => (
+              <li key={directory}>
+                <strong>{directory}</strong>
+              </li>
+            ))}
+          </ul>
+        )}
         {conversionID && (
           <div>
-            <p>Book title: {bookTitle}</p>
             <button onClick={handleDownload}> Download MOBI </button>
           </div>
         )}

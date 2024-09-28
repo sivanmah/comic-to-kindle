@@ -2,4 +2,5 @@ ideas.txt
 
 /comic-converter-backend/__pycache__/
 /comic-converter-backend/uploads/
+/comic-converter-backend/output/
 /comic-converter-backend/venv/
