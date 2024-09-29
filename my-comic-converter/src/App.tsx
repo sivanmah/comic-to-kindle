@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import axios from "axios";
 
 interface FileInfo {
@@ -10,6 +10,7 @@ function App() {
   const [conversionID, setConversionID] = useState<string | null>(null);
   const [fileInfos, setFileInfos] = useState<FileInfo[]>([]);
   const [progress, setProgress] = useState<number | null>(null);
+  const [taskID, setTaskID] = useState<string | null>(null);
 
   const handleFileChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -44,10 +45,9 @@ function App() {
         formData.append(key, file);
       });
 
-      // Log the FormData contents
-      for (const [key, value] of formData.entries()) {
+      /*       for (const [key, value] of formData.entries()) {
         console.log(key, value);
-      }
+      } */
 
       try {
         const response = await axios.post(
@@ -57,10 +57,10 @@ function App() {
             headers: {
               "Content-Type": "multipart/form-data",
             },
-            /* possible upload progress bar here */
           }
         );
         setProgress(response.data.progress);
+        setTaskID(response.data.task_id);
         setConversionID(response.data.conversion_id);
       } catch (error) {
         console.error("Error converting images:", error);
@@ -74,6 +74,26 @@ function App() {
       window.location.href = `http://localhost:5000/download/${conversionID}`;
     }
   };
+
+  useEffect(() => {
+    if (taskID) {
+      const interval = setInterval(async () => {
+        try {
+          const response = await axios.get(
+            `http://localhost:5000/status/${taskID}`
+          );
+          setProgress(response.data.progress);
+          setConversionID(response.data.conversion_id);
+          if (conversionID) {
+            clearInterval(interval);
+          }
+        } catch (error) {
+          console.error("Error checking task status:", error);
+        }
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [taskID, conversionID]);
 
   return (
     <div className="p-20 flex justify-center">
@@ -110,11 +130,15 @@ function App() {
             ))}
           </ul>
         )}
-        {progress !== null && (
+        {taskID && (
           <div>
             <p>
-              Progress...: {progress} of{" "}
-              {new Set(fileInfos.map(({ directory }) => directory)).size}
+              <progress
+                value={progress !== null ? progress : 0}
+                max={
+                  new Set(fileInfos.map(({ directory }) => directory)).size + 1
+                }
+              ></progress>
             </p>
           </div>
         )}

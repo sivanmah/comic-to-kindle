@@ -1,6 +1,5 @@
 import os
 import io
-import platform
 from zipfile import ZipFile
 import subprocess
 from flask import Flask, request, jsonify, send_file
@@ -9,10 +8,13 @@ from werkzeug.utils import secure_filename
 from PIL import Image
 from ebooklib import epub
 import uuid
+import threading
+import time
 
 
 app = Flask(__name__)
 CORS(app)
+task_progress = {}
 
 os.makedirs('uploads', exist_ok=True)
 UPLOAD_FOLDER = 'uploads'
@@ -20,7 +22,7 @@ app.config['OUTPUT_FOLDER'] = 'output'
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER    
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -87,37 +89,43 @@ def convert_epub_to_mobi(epub_file, output_mobi):
 
 
 @app.route('/convert', methods=['POST'])
-def convert_images():
+def start_conversion():
     if not request.files:
         return jsonify({'error': 'No files found in request'}), 400
     
     conversion_id = str(uuid.uuid4())
-    conversion_folder = os.path.join(app.config['UPLOAD_FOLDER'], conversion_id) 
-    output_folder = os.path.join(app.config['OUTPUT_FOLDER'], conversion_id)
+    conversion_folder = os.path.join(app.config['UPLOAD_FOLDER'], conversion_id)
     os.makedirs(conversion_folder, exist_ok=True)
-    os.makedirs(output_folder, exist_ok=True)
 
     saved_files = {}
     for key, file in request.files.items():
         directory, filename = os.path.split(key)
         if file and allowed_file(filename):
             filename = secure_filename(filename)
-
             dir_path = os.path.join(conversion_folder, directory)
             os.makedirs(dir_path, exist_ok=True)
-
             file_path = os.path.join(dir_path, filename)
             file.save(file_path)
-
             if directory not in saved_files:
                 saved_files[directory] = []
             saved_files[directory].append(file_path)
 
-        if not saved_files:
-            return jsonify({'error': 'No valid images found in upload'}), 400
+    if not saved_files:
+        return jsonify({'error': 'No valid images found in upload'}), 400
+
+    thread = threading.Thread(target=background_task, args=(conversion_id, saved_files))
+    thread.start()
+
+    return jsonify({'task_id': conversion_id}), 202
+
+
+def background_task(conversion_id, fileLists):
+    task_progress[conversion_id] = {'progress': 1, 'status': 'In Progress'}
+    output_folder = os.path.join(app.config['OUTPUT_FOLDER'], conversion_id)
+    os.makedirs(output_folder, exist_ok=True)
 
     results = []
-    for directory, files in saved_files.items():
+    for directory, files in fileLists.items():
         files.sort()
         book_title = directory if directory else "Untitled"
         
@@ -137,16 +145,15 @@ def convert_images():
                 'error': str(e)
             })
         else:
+            task_progress[conversion_id]['progress'] += 1
             results.append({
                 'book_title': book_title,
                 'epub_path': epub_path,
                 'mobi_path': mobi_path
             })
 
-    return jsonify({
-        'conversion_id': conversion_id,
-        'results': results
-    }), 200
+    task_progress[conversion_id]['status'] = 'Completed'
+
 
 @app.route('/download/<conversion_id>')
 def download_mobi(conversion_id):
@@ -172,6 +179,16 @@ def download_mobi(conversion_id):
         as_attachment=True,
         download_name='conversion.zip',
     )
+
+@app.route('/status/<conversion_id>')
+def get_status(conversion_id):
+    progress = task_progress[conversion_id].get('progress', 0)
+    status = task_progress[conversion_id].get('status', 'In Progress')
+    if status == 'Completed':
+        return jsonify({'progress': progress, 'conversion_id': conversion_id, 'status': status})
+    else:
+        return jsonify({'progress': progress})
+
 
 if __name__ == '__main__':
     app.run(debug=True)
