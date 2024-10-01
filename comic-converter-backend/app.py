@@ -27,6 +27,12 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def handle_spread(image):
+    width, height = image.size
+    if width > height:
+        image = image.rotate(90, expand=True)
+    return image
+
 def create_epub_from_images(image_files, output_epub, book_title):
     book = epub.EpubBook()
     book.set_identifier(str(uuid.uuid4()))
@@ -42,12 +48,15 @@ def create_epub_from_images(image_files, output_epub, book_title):
 
     for i, image_file in enumerate(image_files):
         with Image.open(image_file) as img:
+            img_format = img.format
+            img = handle_spread(img)
             img_io = io.BytesIO()
-            img.save(img_io, img.format)
+            img.save(img_io, img_format)
             img_data = img_io.getvalue()
+            
 
-            epub_image_name = f'image{i}.{img.format.lower()}'
-            epub_image = epub.EpubImage(file_name=epub_image_name, media_type=f'image/{img.format.lower()}', content=img_data)
+            epub_image_name = f'image{i}.{img_format.lower()}'
+            epub_image = epub.EpubImage(file_name=epub_image_name, media_type=f'image/{img_format.lower()}', content=img_data)
             book.add_item(epub_image)
 
             # Create a chapter for each image
