@@ -5,7 +5,7 @@ import subprocess
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
-from PIL import Image
+from PIL import Image, ImageOps
 from ebooklib import epub
 import uuid
 import threading
@@ -33,6 +33,11 @@ def handle_spread(image):
         image = image.rotate(90, expand=True)
     return image
 
+def compress_image(image):
+    image = ImageOps.grayscale(image)
+    return image
+    
+
 def create_epub_from_images(image_files, output_epub, book_title):
     book = epub.EpubBook()
     book.set_identifier(str(uuid.uuid4()))
@@ -40,8 +45,10 @@ def create_epub_from_images(image_files, output_epub, book_title):
     book.set_language('en')
 
     with Image.open(image_files[0]) as img:
+        img_format = img.format
+        img = compress_image(img)
         img_io = io.BytesIO()
-        img.save(img_io, img.format)
+        img.save(img_io, img_format)
         book.set_cover(image_files[0], img_io.getvalue(), create_page=False)
 
     chapters = []
@@ -50,6 +57,7 @@ def create_epub_from_images(image_files, output_epub, book_title):
         with Image.open(image_file) as img:
             img_format = img.format
             img = handle_spread(img)
+            img = compress_image(img)
             img_io = io.BytesIO()
             img.save(img_io, img_format)
             img_data = img_io.getvalue()
