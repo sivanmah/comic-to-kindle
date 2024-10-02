@@ -12,6 +12,7 @@ function App() {
   const [progress, setProgress] = useState<number | null>(null);
   const [taskID, setTaskID] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleInputAreaClick = () => {
     fileInputRef.current?.click();
@@ -19,6 +20,7 @@ function App() {
 
   const handleFileChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
+      setError(null);
       const fileList = event.target.files;
       if (fileList) {
         const newFileInfos: FileInfo[] = [];
@@ -41,6 +43,7 @@ function App() {
   const handleSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
+      setError(null);
 
       const formData = new FormData();
 
@@ -49,10 +52,6 @@ function App() {
         const key = `${directory}/${file.name}`;
         formData.append(key, file);
       });
-
-      /*       for (const [key, value] of formData.entries()) {
-        console.log(key, value);
-      } */
 
       try {
         const response = await axios.post(
@@ -68,7 +67,17 @@ function App() {
         setTaskID(response.data.task_id);
         setConversionID(response.data.conversion_id);
       } catch (error) {
-        console.error("Error converting images:", error);
+        if (axios.isAxiosError(error)) {
+          if (error.response) {
+            setError(error.response.data.error);
+          } else if (error.request) {
+            setError("No response received from server");
+          } else {
+            setError("Error setting up the request");
+          }
+        } else {
+          setError("An unexpected error occurred");
+        }
       }
     },
     [fileInfos]
@@ -128,9 +137,9 @@ function App() {
             />
             <p className="text-sm text-gray-400">Click here</p>
           </div>
+          {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
           <button
             type="submit"
-            disabled={fileInfos.length === 0}
             className={`w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
               fileInfos.length > 0
                 ? "bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
