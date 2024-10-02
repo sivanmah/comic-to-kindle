@@ -92,14 +92,14 @@ def create_epub_from_images(image_files, output_epub, book_title):
 
     epub.write_epub(output_epub, book, {})
 
-def convert_epub_to_mobi(epub_file: str, output_mobi: str) -> None:
+def convert_epub_to_azw3(epub_file: str, output_azw3: str) -> None:
     try:
-        result = subprocess.run(['ebook-convert', epub_file, output_mobi, 
-                                 '--mobi-file-type=both',  # Creates both MOBI6 and KF8
-                                 '--remove-paragraph-spacing',
+        result = subprocess.run(['ebook-convert', epub_file, output_azw3,
+                                 '--output-profile=kindle_pw',
                                  '--chapter-mark=none',
-                                 '--page-breaks-before=/',  # Prevents page breaks
-                                 '--no-inline-toc'], 
+                                 '--page-breaks-before=/',
+                                 '--no-inline-toc',
+], 
                                 check=True, capture_output=True, text=True)
         print(f"Conversion output: {result.stdout}")
     except subprocess.CalledProcessError as e:
@@ -156,11 +156,11 @@ def background_task(conversion_id, fileLists):
         epub_path = os.path.join(output_folder, epub_filename)
         create_epub_from_images(files, epub_path, book_title)
         
-        # Convert EPUB to MOBI
-        mobi_filename = f"{book_title}.mobi"
-        mobi_path = os.path.join(output_folder, mobi_filename)
+        # Convert EPUB to AZW3
+        azw3_filename = f"{book_title}.azw3"
+        azw3_path = os.path.join(output_folder, azw3_filename)
         try:
-            convert_epub_to_mobi(epub_path, mobi_path)
+            convert_epub_to_azw3(epub_path, azw3_path)
         except Exception as e:
             results.append({
                 'book_title': book_title,
@@ -171,27 +171,27 @@ def background_task(conversion_id, fileLists):
             results.append({
                 'book_title': book_title,
                 'epub_path': epub_path,
-                'mobi_path': mobi_path
+                'azw3_path': azw3_path
             })
 
     task_progress[conversion_id]['status'] = 'Completed'
 
 
 @app.route('/download/<conversion_id>')
-def download_mobi(conversion_id):
+def download_azw3(conversion_id):
     output_folder = os.path.join(app.config['OUTPUT_FOLDER'], conversion_id)
     if not os.path.exists(output_folder):
         return jsonify({'error': 'Conversion ID not found'}), 404 
 
-    mobi_files = [f for f in os.listdir(output_folder) if f.endswith('.mobi')]
-    if not mobi_files:
-        return jsonify({'error': 'No MOBI files found for this conversion ID'}), 404
+    azw3_files = [f for f in os.listdir(output_folder) if f.endswith('.azw3')]
+    if not azw3_files:
+        return jsonify({'error': 'No AZW3 files found for this conversion ID'}), 404
 
     memory_file = io.BytesIO()
     with ZipFile(memory_file, 'w') as zf:
-        for mobi_file in mobi_files:
-            mobi_path = os.path.join(output_folder, mobi_file)
-            zf.write(mobi_path, mobi_file)   
+        for azw3_file in azw3_files:
+            azw3_path = os.path.join(output_folder, azw3_file)
+            zf.write(azw3_path, azw3_file)   
     
     memory_file.seek(0)
 
