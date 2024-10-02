@@ -73,8 +73,8 @@ def create_epub_from_images(image_files, output_epub, book_title):
                 <head>
                     <style>
                         img {{
-                            width: 100%;
-                            height: 100%;
+                            max-width: 100%;
+                            height: auto;
                         }}
                     </style>
                 </head>
@@ -92,12 +92,18 @@ def create_epub_from_images(image_files, output_epub, book_title):
 
     epub.write_epub(output_epub, book, {})
 
-def convert_epub_to_mobi(epub_file, output_mobi):
+def convert_epub_to_mobi(epub_file: str, output_mobi: str) -> None:
     try:
-        subprocess.run(['ebook-convert', epub_file, output_mobi], 
-                       check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        result = subprocess.run(['ebook-convert', epub_file, output_mobi, 
+                                 '--mobi-file-type=both',  # Creates both MOBI6 and KF8
+                                 '--remove-paragraph-spacing',
+                                 '--chapter-mark=none',
+                                 '--page-breaks-before=/',  # Prevents page breaks
+                                 '--no-inline-toc'], 
+                                check=True, capture_output=True, text=True)
+        print(f"Conversion output: {result.stdout}")
     except subprocess.CalledProcessError as e:
-        print(f"Conversion error: {e.stderr.decode()}")
+        print(f"Conversion error: {e.stderr}")
         raise
     except FileNotFoundError:
         print("ebook-convert not found. Please install Calibre.")
