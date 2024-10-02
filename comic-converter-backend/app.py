@@ -9,7 +9,6 @@ from PIL import Image, ImageOps
 from ebooklib import epub
 import uuid
 import threading
-import time
 
 
 app = Flask(__name__)
