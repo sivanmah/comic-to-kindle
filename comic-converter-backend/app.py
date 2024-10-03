@@ -6,7 +6,6 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from PIL import Image, ImageOps
-from ebooklib import epub
 import uuid
 import threading
 
