@@ -1,6 +1,6 @@
 import os
 import io
-from zipfile import ZipFile
+from zipfile import ZipFile, ZIP_STORED
 import subprocess
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
@@ -38,59 +38,82 @@ def compress_image(image):
     
 
 def create_epub_from_images(image_files, output_epub, book_title):
-    book = epub.EpubBook()
-    book.set_identifier(str(uuid.uuid4()))
-    book.set_title(book_title)
-    book.set_language('en')
+    with ZipFile(output_epub, 'w') as epub:
+        # Add mimetype file
+        epub.writestr('mimetype', 'application/epub+zip', compress_type=ZIP_STORED)
 
-    with Image.open(image_files[0]) as img:
-        img_format = img.format
-        img = compress_image(img)
-        img_io = io.BytesIO()
-        img.save(img_io, img_format)
-        book.set_cover(image_files[0], img_io.getvalue(), create_page=False)
+        # Add container.xml
+        epub.writestr('META-INF/container.xml', '''<?xml version="1.0"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+          <rootfiles>
+            <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+          </rootfiles>
+        </container>''')
 
-    chapters = []
+        # Create and add content files
+        chapters = []
+        for i, image_file in enumerate(image_files):
+            with Image.open(image_file) as img:
+                img_format = img.format.lower()
+                img = handle_spread(img)
+                img = compress_image(img)
+                img_io = io.BytesIO()
+                img.save(img_io, img_format)
+                img_data = img_io.getvalue()
 
-    for i, image_file in enumerate(image_files):
-        with Image.open(image_file) as img:
-            img_format = img.format
-            img = handle_spread(img)
-            img = compress_image(img)
-            img_io = io.BytesIO()
-            img.save(img_io, img_format)
-            img_data = img_io.getvalue()
-            
+            epub.writestr(f'OEBPS/images/image_{i}.{img_format}', img_data)
 
-            epub_image_name = f'image{i}.{img_format.lower()}'
-            epub_image = epub.EpubImage(file_name=epub_image_name, media_type=f'image/{img_format.lower()}', content=img_data)
-            book.add_item(epub_image)
+            chapter_content = f'''<?xml version="1.0" encoding="utf-8"?>
+            <!DOCTYPE html>
+            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+            <head>
+                <title>Page {i+1}</title>
+                <style>
+                    body, html {{
+                        margin: 0;
+                        padding: 0;
+                        width: 100%;
+                        height: 100%;
+                    }}
+                    body {{
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                    }}
+                    img {{
+                        max-width: 100%;
+                        max-height: 100%;
+                        object-fit: contain;
+                    }}
+                </style>
+            </head>
+            <body>
+                <img src="images/image_{i}.{img_format}" alt="Page {i+1}"/>
+            </body>
+            </html>'''
 
-            # Create a chapter for each image
-            chapter = epub.EpubHtml(title=f'Page {i+1}', file_name=f'page{i+1}.xhtml')
-            chapter.content = f'''
-            <html>
-                <head>
-                    <style>
-                        img {{
-                            max-width: 100%;
-                            height: auto;
-                        }}
-                    </style>
-                </head>
-                <body>
-                    <img src="{epub_image_name}" alt="Page {i+1}"/>
-                </body>
-            </html>
-            '''
-            book.add_item(chapter)
-            chapters.append(chapter)
+            epub.writestr(f'OEBPS/page_{i+1}.xhtml', chapter_content)
+            chapters.append(f'page_{i+1}.xhtml')
 
-    book.add_item(epub.EpubNcx())  # create Navigation Control file
-    book.add_item(epub.EpubNav())
-    book.spine = chapters
+        # Create and add content.opf
+        content_opf = f'''<?xml version="1.0" encoding="utf-8"?>
+        <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="uuid_id" version="2.0">
+          <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+            <dc:title>{book_title}</dc:title>
+            <dc:identifier id="uuid_id" opf:scheme="uuid">{uuid.uuid4()}</dc:identifier>
+            <dc:language>en</dc:language>
+          </metadata>
+          <manifest>
+            {''.join(f'<item id="page_{i+1}" href="{chapter}" media-type="application/xhtml+xml" />' for i, chapter in enumerate(chapters))}
+            {''.join(f'<item id="image_{i}" href="images/image_{i}.{Image.open(image_file).format.lower()}" media-type="image/{Image.open(image_file).format.lower()}" />' for i, image_file in enumerate(image_files))}
+          </manifest>
+          <spine toc="ncx">
+            {''.join(f'<itemref idref="page_{i+1}" />' for i in range(len(chapters)))}
+          </spine>
+        </package>'''
 
-    epub.write_epub(output_epub, book, {})
+        epub.writestr('OEBPS/content.opf', content_opf)
+
 
 def convert_epub_to_azw3(epub_file: str, output_azw3: str) -> None:
     try:
