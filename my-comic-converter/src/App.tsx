@@ -82,7 +82,7 @@ function App() {
         }
       }
     },
-    [fileInfos]
+    [fileInfos, mangaMode]
   );
 
   const handleDownload = () => {
