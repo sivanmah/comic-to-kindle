@@ -1,4 +1,4 @@
-import os
+import os, shutil
 import io
 from zipfile import ZipFile, ZIP_STORED
 import subprocess
@@ -196,7 +196,9 @@ def background_task(conversion_id, fileLists, manga_mode):
                 'epub_path': epub_path,
                 'azw3_path': azw3_path
             })
-
+    shutil.rmtree(os.path.join(app.config['UPLOAD_FOLDER'], conversion_id))
+    # remove output files after 1 hour
+    threading.Timer(3600, lambda: shutil.rmtree(output_folder)).start()
     task_progress[conversion_id]['status'] = 'Completed'
 
 
