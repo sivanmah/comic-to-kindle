@@ -36,7 +36,7 @@ def compress_image(image):
     return image
     
 
-def create_epub_from_images(image_files, output_epub, book_title):
+def create_epub_from_images(image_files, output_epub, book_title, manga_mode):
     with ZipFile(output_epub, 'w') as epub:
         # Add mimetype file
         epub.writestr('mimetype', 'application/epub+zip', compress_type=ZIP_STORED)
@@ -106,7 +106,7 @@ def create_epub_from_images(image_files, output_epub, book_title):
             {''.join(f'<item id="page_{i+1}" href="{chapter}" media-type="application/xhtml+xml" />' for i, chapter in enumerate(chapters))}
             {''.join(f'<item id="image_{i}" href="images/image_{i}.{Image.open(image_file).format.lower()}" media-type="image/{Image.open(image_file).format.lower()}" />' for i, image_file in enumerate(image_files))}
           </manifest>
-          <spine toc="ncx">
+          <spine toc="ncx" {"page-progression-direction='rtl'" if manga_mode else ""}>
             {''.join(f'<itemref idref="page_{i+1}" />' for i in range(len(chapters)))}
           </spine>
         </package>'''
@@ -142,6 +142,7 @@ def start_conversion():
     os.makedirs(conversion_folder, exist_ok=True)
 
     saved_files = {}
+    manga_mode = request.form.get('manga_mode', 'false')== 'true'
     for key, file in request.files.items():
         directory, filename = os.path.split(key)
         if file and allowed_file(filename):
@@ -157,13 +158,13 @@ def start_conversion():
     if not saved_files:
         return jsonify({'error': 'No valid images found in upload'}), 400
 
-    thread = threading.Thread(target=background_task, args=(conversion_id, saved_files))
+    thread = threading.Thread(target=background_task, args=(conversion_id, saved_files, manga_mode))
     thread.start()
 
     return jsonify({'task_id': conversion_id}), 202
 
 
-def background_task(conversion_id, fileLists):
+def background_task(conversion_id, fileLists, manga_mode):
     task_progress[conversion_id] = {'progress': 1, 'status': 'In Progress'}
     output_folder = os.path.join(app.config['OUTPUT_FOLDER'], conversion_id)
     os.makedirs(output_folder, exist_ok=True)
@@ -176,7 +177,7 @@ def background_task(conversion_id, fileLists):
         # Create EPUB
         epub_filename = f"{book_title}.epub"
         epub_path = os.path.join(output_folder, epub_filename)
-        create_epub_from_images(files, epub_path, book_title)
+        create_epub_from_images(files, epub_path, book_title, manga_mode)
         
         # Convert EPUB to AZW3
         azw3_filename = f"{book_title}.azw3"
