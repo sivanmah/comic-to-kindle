@@ -13,6 +13,7 @@ function App() {
   const [taskID, setTaskID] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mangaMode, setMangaMode] = useState<boolean>(false);
 
   const handleInputAreaClick = () => {
     fileInputRef.current?.click();
@@ -46,6 +47,7 @@ function App() {
       setError(null);
 
       const formData = new FormData();
+      formData.append("manga_mode", mangaMode ? "true" : "false");
 
       fileInfos.forEach(({ file, directory }) => {
         // Use the full relative path as the key to preserve directory structure
@@ -136,6 +138,22 @@ function App() {
               } as React.InputHTMLAttributes<HTMLInputElement>)}
             />
             <p className="text-sm text-gray-400">Click here</p>
+          </div>
+          <div className="flex gap-2 items-center mb-4">
+            <label
+              htmlFor="mangaMode"
+              className="text-sm"
+              title="Check this if you want your comic to be read from right to left"
+            >
+              Manga mode
+            </label>
+            <input
+              className="h-4 w-4"
+              type="checkbox"
+              id="mangaMode"
+              checked={mangaMode}
+              onChange={(event) => setMangaMode(event.target.checked)}
+            />
           </div>
           {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
           <button
