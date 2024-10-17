@@ -15,6 +15,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [mangaMode, setMangaMode] = useState<boolean>(false);
 
+  const API_URL = "http://3.78.240.77:5000";
+
   const handleInputAreaClick = () => {
     fileInputRef.current?.click();
   };
@@ -56,15 +58,11 @@ function App() {
       });
 
       try {
-        const response = await axios.post(
-          "http://localhost:5000/convert",
-          formData,
-          {
-            headers: {
-              "Content-Type": "multipart/form-data",
-            },
-          }
-        );
+        const response = await axios.post(`${API_URL}/convert`, formData, {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        });
         setProgress(response.data.progress);
         setTaskID(response.data.task_id);
         setConversionID(response.data.conversion_id);
@@ -87,7 +85,7 @@ function App() {
 
   const handleDownload = () => {
     if (conversionID) {
-      window.location.href = `http://localhost:5000/download/${conversionID}`;
+      window.location.href = `${API_URL}/download/${conversionID}`;
     }
   };
 
@@ -95,9 +93,7 @@ function App() {
     if (taskID) {
       const interval = setInterval(async () => {
         try {
-          const response = await axios.get(
-            `http://localhost:5000/status/${taskID}`
-          );
+          const response = await axios.get(`${API_URL}/status/${taskID}`);
           setProgress(response.data.progress);
           setConversionID(response.data.conversion_id);
           if (conversionID) {
