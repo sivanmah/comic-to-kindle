@@ -15,7 +15,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [mangaMode, setMangaMode] = useState<boolean>(false);
 
-  const API_URL = "http://3.78.240.77:5000";
+  const API_URL = "https://comicconverter.hopto.org";
 
   const handleInputAreaClick = () => {
     fileInputRef.current?.click();

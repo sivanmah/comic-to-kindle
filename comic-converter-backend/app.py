@@ -8,10 +8,12 @@ from werkzeug.utils import secure_filename
 from PIL import Image, ImageOps
 import uuid
 import threading
+import redis
 
 
 app = Flask(__name__)
 CORS(app)
+redis_client = redis.Redis(host='localhost', port=6379, db=0)
 task_progress = {}
 
 os.makedirs('uploads', exist_ok=True)
@@ -116,7 +118,7 @@ def create_epub_from_images(image_files, output_epub, book_title, manga_mode):
 
 def convert_epub_to_azw3(epub_file: str, output_azw3: str) -> None:
     try:
-        result = subprocess.run(['ebook-convert', epub_file, output_azw3,
+        result = subprocess.run(['/usr/bin/ebook-convert', epub_file, output_azw3,
                                  '--output-profile=kindle_pw',
                                  '--chapter-mark=none',
                                  '--page-breaks-before=/',
@@ -157,6 +159,11 @@ def start_conversion():
 
     if not saved_files:
         return jsonify({'error': 'No valid images found in upload'}), 400
+    
+    redis_client.hset(f"task:{conversion_id}", mapping={
+        'progress': 1,
+        'status': 'In Progress'
+    })
 
     thread = threading.Thread(target=background_task, args=(conversion_id, saved_files, manga_mode))
     thread.start()
@@ -177,20 +184,25 @@ def background_task(conversion_id, fileLists, manga_mode):
         # Create EPUB
         epub_filename = f"{book_title}.epub"
         epub_path = os.path.join(output_folder, epub_filename)
+        print (f"Creating EPUB: {epub_path}")
         create_epub_from_images(files, epub_path, book_title, manga_mode)
+        print (f"Created EPUB: {epub_path}")
         
         # Convert EPUB to AZW3
         azw3_filename = f"{book_title}.azw3"
         azw3_path = os.path.join(output_folder, azw3_filename)
         try:
+            print (f"Converting EPUB to AZW3: {azw3_path}")
             convert_epub_to_azw3(epub_path, azw3_path)
+            print (f"Converted EPUB to AZW3: {azw3_path}")
         except Exception as e:
+            print (f"Error converting EPUB to AZW3: {e}")
             results.append({
                 'book_title': book_title,
                 'error': str(e)
             })
         else:
-            task_progress[conversion_id]['progress'] += 1
+            redis_client.hincrby(f"task:{conversion_id}", 'progress', 1)
             results.append({
                 'book_title': book_title,
                 'epub_path': epub_path,
@@ -199,7 +211,7 @@ def background_task(conversion_id, fileLists, manga_mode):
     shutil.rmtree(os.path.join(app.config['UPLOAD_FOLDER'], conversion_id))
     # remove output files after 1 hour
     threading.Timer(3600, lambda: shutil.rmtree(output_folder)).start()
-    task_progress[conversion_id]['status'] = 'Completed'
+    redis_client.hset(f"task:{conversion_id}", 'status', 'Completed')
 
 
 @app.route('/download/<conversion_id>')
@@ -229,8 +241,13 @@ def download_azw3(conversion_id):
 
 @app.route('/status/<conversion_id>')
 def get_status(conversion_id):
-    progress = task_progress[conversion_id].get('progress', 0)
-    status = task_progress[conversion_id].get('status', 'In Progress')
+    task_data = redis_client.hgetall(f"task:{conversion_id}")
+    if not task_data:
+        return jsonify({'error': 'Task not found'}), 404
+
+    progress = int(task_data.get(b'progress', 0))
+    status = task_data.get(b'status', b'In Progress').decode('utf-8')
+
     if status == 'Completed':
         return jsonify({'progress': progress, 'conversion_id': conversion_id, 'status': status})
     else:
