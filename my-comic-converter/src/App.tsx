@@ -89,6 +89,12 @@ function App() {
     }
   };
 
+  const handleRemoveDirectory = (directory: string) => {
+    setFileInfos((prevFileInfos) =>
+      prevFileInfos.filter((fileInfo) => fileInfo.directory !== directory)
+    );
+  };
+
   useEffect(() => {
     if (taskID) {
       const interval = setInterval(async () => {
@@ -169,10 +175,16 @@ function App() {
               new Set(fileInfos.map(({ directory }) => directory))
             ).map((directory) => (
               <li
-                className="text-xs mr-1 mb-1 font-semibold inline-block py-1 px-2 rounded-full text-blue-600 bg-blue-200"
+                className="text-xs mr-1 mb-1 font-semibold py-1 px-2 rounded-full text-blue-700 bg-blue-200 hover:bg-blue-300 inline-flex items-center"
                 key={directory}
               >
                 {directory}
+                <span
+                  className="cursor-pointer text-xxs ml-1"
+                  onClick={() => handleRemoveDirectory(directory)}
+                >
+                  &#10005;
+                </span>
               </li>
             ))}
           </ul>
